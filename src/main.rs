@@ -1,20 +1,16 @@
 use std::fmt::Debug;
-use std::io::{self};
+use std::io::{self, Write};
 
 #[derive(Debug)]
-struct ComboLock {
-    is_open: bool,
-    is_locked: bool,
+struct Lock {
     state: Option<Box<dyn State>>,
     combination: [i8; 3],
 }
 
-impl ComboLock {
-    pub fn new(first: i8, second: i8, third: i8) -> ComboLock {
-        println!("--> Creating a new lock");
-        ComboLock {
-            is_open: true,
-            is_locked: false,
+impl Lock {
+    pub fn new(first: i8, second: i8, third: i8) -> Lock {
+        print_info("Creating a new lock");
+        Lock {
             state: Some(Box::new(UnlockedOpen { })),
             combination: [first, second, third] 
         }
@@ -24,61 +20,52 @@ impl ComboLock {
         if let Some(s) = self.state.take() {
             self.state = Some(s.lock());
         }
-        self.update();
     }
 
     pub fn unlock(&mut self, first: i8, second: i8, third: i8) {
         if let Some(s) = self.state.take() {
             self.state = Some(s.unlock(first, second, third, self.combination));
         }
-        self.update();
     }
 
     pub fn close(&mut self) {
         if let Some(s) = self.state.take() {
             self.state = Some(s.close());
         }
-        self.update();
     }
 
     pub fn open(&mut self) {
+        println!("{:?}", self.state);
+
         if let Some(s) = self.state.take() {
             self.state = Some(s.open());
         }
-        self.update();
     }
 
     pub fn update_combination(&mut self, first: i8, second: i8, third: i8) {
         if let Some(s) = self.state.take() {
-            s.update_combination(self, first, second, third);
-            self.state = Some(s);
-        }
-    }
-    
-    fn update(&mut self) {
-        if let Some(s) = self.state.take() {
-            self.is_open = s.is_open();
-            self.is_locked = s.is_locked();
-            self.state = Some(s);
+            self.state = Some(s.update_combination(self, first, second, third));
         }
     }
 
     fn print_status(&self) {
-        println!("--> Is open: {:?}    Is locked: {:?}", self.is_open, self.is_locked);
+        if let Some(s) = self.state.as_ref() {
+            print_info(&s.status_string());
+        } else {
+            print_error("Invalid lock state");
+            unreachable!();
+        }
     }
 }
 
 trait State {
     fn name(&self) -> String;
+    fn status_string(&self) -> String;
     fn lock(self: Box<Self>) -> Box<dyn State>;
     fn unlock(self: Box<Self>, first: i8, second: i8, third: i8, combination: [i8; 3]) -> Box<dyn State>;
     fn close(self: Box<Self>) -> Box<dyn State>;
     fn open(self: Box<Self>) -> Box<dyn State>;
-    fn update_combination(self: &Self, _lock: &mut ComboLock, _first: i8, _second: i8, _third: i8) {
-        println!("--> Lock must be open to change the combination");
-    }
-    fn is_open(&self) -> bool { false }
-    fn is_locked(&self) -> bool { false }
+    fn update_combination(self: Box<Self>, _lock: &mut Lock, _first: i8, _second: i8, _third: i8) -> Box<dyn State>;
 }
 
 struct UnlockedOpen {}
@@ -86,28 +73,29 @@ impl State for UnlockedOpen {
     fn name(&self) -> String {
         "UnlockedOpen".to_owned()
     }
+    fn status_string(&self) -> String {
+        "[Unlocked] [Open]".to_owned()
+    }
     fn lock(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Unable to lock an open lock");
+        print_error("Must close before locking");
         self
     }
     fn unlock(self: Box<Self>, _first: i8, _second: i8, _third: i8, _combination: [i8; 3]) -> Box<dyn State> {
-        println!("--> Already unlocked");
+        print_error("Already unlocked");
         self
     }
     fn close(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Lock closed");
+        print_info("Lock closed");
         Box::new(UnlockedClosed {})
     }
     fn open(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Lock already open");
+        print_error("Already open");
         self
     }
-    fn update_combination(self: &Self, lock: &mut ComboLock, first: i8, second: i8, third: i8) {
-        println!("--> Combination changed");
+    fn update_combination(self: Box<Self>, lock: &mut Lock, first: i8, second: i8, third: i8) -> Box<dyn State> {
+        print_info("Code changed");
         lock.combination = [first, second, third];
-    }
-    fn is_open(&self) -> bool {
-        true
+        self
     }
 }
 
@@ -116,21 +104,28 @@ impl State for UnlockedClosed {
     fn name(&self) -> String {
         "UnlockedClosed".to_owned()
     }
+    fn status_string(&self) -> String {
+        "[Unlocked] [Closed]".to_owned()
+    }
     fn lock(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Locked!");
+        print_info("Locked");
         Box::new(Locked {})
     }
     fn unlock(self: Box<Self>, _first: i8, _second: i8, _third: i8, _combination: [i8; 3]) -> Box<dyn State> {
-        println!("--> Already unlocked");
+        print_error("Already unlocked");
         self
     }
     fn close(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Lock already closed");
+        print_error("Already closed");
         self
     }
     fn open(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Lock opened");
+        print_info("Lock opened");
         Box::new(UnlockedOpen {})
+    }
+    fn update_combination(self: Box<Self>, _lock: &mut Lock, _first: i8, _second: i8, _third: i8) -> Box<dyn State> {
+        print_error("Must be open to change the code");
+        self
     }
 }
 
@@ -139,29 +134,33 @@ impl State for Locked {
     fn name(&self) -> String {
         "Locked".to_owned()
     }
+    fn status_string(&self) -> String {
+        "[Locked] [Closed]".to_owned()
+    }
     fn lock(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Lock already locked");
+        print_error("Lock already locked");
         self
     }
     fn unlock(self: Box<Self>, first: i8, second: i8, third: i8, combination: [i8; 3]) -> Box<dyn State> {
         if [first, second, third] == combination{
-            println!("--> Valid combination, unlocked!");
+            print_info("Valid combination, unlocked!");
             Box::new(UnlockedClosed {})
         } else {
-            println!("--> Invalid combination, still locked");
+            print_error("Invalid combination, still locked");
             self
         }
     }
     fn close(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Lock already closed (and locked)");
+        print_error("Lock already closed (and locked)");
         self
     }
     fn open(self: Box<Self>) -> Box<dyn State> {
-        println!("--> Unable to open a locked lock");
+        print_error("Unable to open a locked lock");
         self
     }
-    fn is_locked(&self) -> bool {
-        true
+    fn update_combination(self: Box<Self>, _lock: &mut Lock, _first: i8, _second: i8, _third: i8) -> Box<dyn State> {
+        print_error("Lock must be open and unlocked to change the code");
+        self
     }
 }
 
@@ -173,13 +172,14 @@ impl Debug for dyn State {
 }
 
 fn main() {
-    let mut lock = ComboLock::new(0, 0, 0);
+    let mut lock = Lock::new(0, 0, 0);
 
     println!("Finite State Machine Lock Demo");
     print_commands();
 
     loop {
-        println!("Enter command: ");
+        print!("Enter command: ");
+        io::stdout().flush().unwrap(); // Ensures the user's input is on the same line as the prompt
 
         let mut buffer = String::new();
         io::stdin()
@@ -192,48 +192,55 @@ fn main() {
             match command.to_owned() {
                 "new" => {
                     if let Ok(values) = parse_combo(line) {
-                        println!("Using provided combination (* * *)");
-                        lock = ComboLock::new(values[0], values[1], values[2]);
+                        print_info("Using provided combination (* * *)");
+                        lock = Lock::new(values[0], values[1], values[2]);
                     } else {
-                        println!("Using default combination (0 0 0)");
-                        lock = ComboLock::new(0,0,0);
+                        print_info("Using default combination (0 0 0)");
+                        lock = Lock::new(0,0,0);
                     }
+                    lock.print_status();
                 },
                 "set" => {
                     let parsed = parse_combo(line);
                     if let Ok(values) = parsed {
                         lock.update_combination(values[0], values[1], values[2]);
                     } else if let Err(msg) = parsed {
-                        println!("{}", msg);
+                        print_error(&msg);
                     }
+                    lock.print_status();
                 }
                 "open" => {
                     lock.open();
+                    lock.print_status();
                 },
                 "close" => {
                     lock.close();
+                    lock.print_status();
                 },
                 "lock" => {
                     lock.lock();
+                    lock.print_status();
                 },
                 "unlock" => {
                     let parsed = parse_combo(line);
                     if let Ok(values) = parsed {
                         lock.unlock(values[0], values[1], values[2]);
                     } else if let Err(msg) = parsed {
-                        println!("{}", msg);
+                        print_error(&msg);
                     }
+                    lock.print_status();
                 },
                 "info" | "status" => lock.print_status(),
                 "debug" => println!("{:#?}", lock),
                 "exit" | "quit" => break,
                 "h" | "help" | "?" => print_commands(),
-                _ => println!("Unknown Command ({}) ('help' for help)", buffer.trim()),
+                _ => print_error(&format!("Unknown Command ({}) ('help' for help)", buffer.trim())),
             }
         }
         println!("");
     }
 }
+
 
 fn parse_combo(line: Vec<&str>) -> Result<[i8; 3], String> { 
     let first = line.get(1);
@@ -256,4 +263,11 @@ fn parse_combo(line: Vec<&str>) -> Result<[i8; 3], String> {
 
 fn print_commands() {
     println!("Possible Commands: [new, set, open, close, lock, unlock, info, debug, quit, help]")
+}
+
+fn print_info(message: &str) {
+    println!("[INFO] {}", message);
+}
+fn print_error(error: &str) {
+    println!("[ERROR] {}", error);
 }
