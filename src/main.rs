@@ -15,18 +15,18 @@ impl Lock {
         }
     }
 
+    pub fn handle_event(&mut self, event: Event) {
+        if let Some(state) = self.state.take() {
+            self.state = Some(state.handle_event(event, self));
+        }
+    }
+
     fn print_status(&self) {
         if let Some(s) = self.state.as_ref() {
             println!("{}", &s.draw());
         } else {
             print_error("Invalid lock state");
             unreachable!();
-        }
-    }
-
-    pub fn handle_event(&mut self, event: Event) {
-        if let Some(state) = self.state.take() {
-            self.state = Some(state.handle_event(event, self));
         }
     }
 }
@@ -43,14 +43,13 @@ impl State for UnlockedOpen {
         String::from("Unlocked and Open")
     }
     fn draw(&self) -> String {
-        String::from(r#"
-         ________
+        String::from(r#"         ________
         |  ____  |
         | |    | |
-        ```    | |
-         ______|_|
+        |_|    | |
+         ______|_| OPEN
         |   __   |
-        |  [  ]  | OPEN
+        |  [  ]  |
         |   []   | UNLOCKED
         |   []   |
          \______/"#)
@@ -89,12 +88,11 @@ impl State for UnlockedClosed {
         String::from("Unlocked and Closed")
     }
     fn draw(&self) -> String {
-        String::from(r#"
-         ________
+        String::from(r#"         ________
         |  ____  |
-        |_|____|_|
+        |_|____|_| CLOSED
         |   __   |
-        |  [  ]  | CLOSED
+        |  [  ]  |
         |   []   | UNLOCKED
         |   []   |
          \______/"#)
@@ -132,12 +130,11 @@ impl State for Locked {
         String::from("Locked")
     }
     fn draw(&self) -> String {
-        String::from(r#"
-         ________
+        String::from(r#"         ________
         |  ____  |
-        |_|____|_|
+        |_|____|_| CLOSED
         |   __   |
-        |  [**]  | CLOSED
+        |  [**]  |
         |   []   | LOCKED
         |   []   |
          \______/"#)
@@ -187,8 +184,8 @@ fn main() {
 
     let mut lock = Lock::new(0, 0, 0);
 
-
     lock.print_status();
+    println!("");
 
     loop {
         print!("Enter command: ");
