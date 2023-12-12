@@ -9,91 +9,75 @@ struct Lock {
 
 impl Lock {
     pub fn new(first: i8, second: i8, third: i8) -> Lock {
-        print_info("Creating a new lock");
         Lock {
             state: Some(Box::new(UnlockedOpen { })),
             combination: [first, second, third] 
         }
     }
 
-    pub fn lock(&mut self) {
-        if let Some(s) = self.state.take() {
-            self.state = Some(s.lock());
-        }
-    }
-
-    pub fn unlock(&mut self, first: i8, second: i8, third: i8) {
-        if let Some(s) = self.state.take() {
-            self.state = Some(s.unlock(first, second, third, self.combination));
-        }
-    }
-
-    pub fn close(&mut self) {
-        if let Some(s) = self.state.take() {
-            self.state = Some(s.close());
-        }
-    }
-
-    pub fn open(&mut self) {
-        println!("{:?}", self.state);
-
-        if let Some(s) = self.state.take() {
-            self.state = Some(s.open());
-        }
-    }
-
-    pub fn update_combination(&mut self, first: i8, second: i8, third: i8) {
-        if let Some(s) = self.state.take() {
-            self.state = Some(s.update_combination(self, first, second, third));
-        }
-    }
-
     fn print_status(&self) {
         if let Some(s) = self.state.as_ref() {
-            print_info(&s.status_string());
+            println!("{}", &s.draw());
         } else {
             print_error("Invalid lock state");
             unreachable!();
+        }
+    }
+
+    pub fn handle_event(&mut self, event: Event) {
+        if let Some(state) = self.state.take() {
+            self.state = Some(state.handle_event(event, self));
         }
     }
 }
 
 trait State {
     fn name(&self) -> String;
-    fn status_string(&self) -> String;
-    fn lock(self: Box<Self>) -> Box<dyn State>;
-    fn unlock(self: Box<Self>, first: i8, second: i8, third: i8, combination: [i8; 3]) -> Box<dyn State>;
-    fn close(self: Box<Self>) -> Box<dyn State>;
-    fn open(self: Box<Self>) -> Box<dyn State>;
-    fn update_combination(self: Box<Self>, _lock: &mut Lock, _first: i8, _second: i8, _third: i8) -> Box<dyn State>;
+    fn draw(&self) -> String;
+    fn handle_event(self: Box<Self>, _event: Event, _lock: &mut Lock) -> Box<dyn State>;
 }
 
 struct UnlockedOpen {}
 impl State for UnlockedOpen {
     fn name(&self) -> String {
-        "UnlockedOpen".to_owned()
+        String::from("Unlocked and Open")
     }
-    fn status_string(&self) -> String {
-        "[Unlocked] [Open]".to_owned()
+    fn draw(&self) -> String {
+        String::from(r#"
+         ________
+        |  ____  |
+        | |    | |
+        ```    | |
+         ______|_|
+        |   __   |
+        |  [  ]  | OPEN
+        |   []   | UNLOCKED
+        |   []   |
+         \______/"#)
     }
-    fn lock(self: Box<Self>) -> Box<dyn State> {
-        print_error("Must close before locking");
-        self
+    fn handle_event(self: Box<Self>, event: Event, lock: &mut Lock) -> Box<dyn State> {
+        match event {
+            Event::Close => {
+                self.close()
+            },
+            Event::ChangeCode(first, second, third) => {
+                self.update_combination(lock, first, second, third)
+            },
+            _ => {
+                print_error("Not allowed for an open lock. Try closing it first.");
+                self
+            },
+        }
     }
-    fn unlock(self: Box<Self>, _first: i8, _second: i8, _third: i8, _combination: [i8; 3]) -> Box<dyn State> {
-        print_error("Already unlocked");
-        self
-    }
+}
+
+impl UnlockedOpen {
     fn close(self: Box<Self>) -> Box<dyn State> {
-        print_info("Lock closed");
+        print_success("Lock closed");
         Box::new(UnlockedClosed {})
     }
-    fn open(self: Box<Self>) -> Box<dyn State> {
-        print_error("Already open");
-        self
-    }
     fn update_combination(self: Box<Self>, lock: &mut Lock, first: i8, second: i8, third: i8) -> Box<dyn State> {
-        print_info("Code changed");
+        print_success("Code changed");
         lock.combination = [first, second, third];
         self
     }
@@ -102,68 +86,86 @@ impl State for UnlockedOpen {
 struct UnlockedClosed {}
 impl State for UnlockedClosed {
     fn name(&self) -> String {
-        "UnlockedClosed".to_owned()
+        String::from("Unlocked and Closed")
     }
-    fn status_string(&self) -> String {
-        "[Unlocked] [Closed]".to_owned()
+    fn draw(&self) -> String {
+        String::from(r#"
+         ________
+        |  ____  |
+        |_|____|_|
+        |   __   |
+        |  [  ]  | CLOSED
+        |   []   | UNLOCKED
+        |   []   |
+         \______/"#)
     }
+    fn handle_event(self: Box<Self>, event: Event, _lock: &mut Lock) -> Box<dyn State> {
+        match event {
+            Event::Open => {
+                self.open()
+            },
+            Event::Lock => {
+                self.lock()
+            }
+            _ => {
+                print_error("Not allowed for an already closed and unlocked lock");
+                self
+            },
+        }
+    }
+}
+
+impl UnlockedClosed {
     fn lock(self: Box<Self>) -> Box<dyn State> {
-        print_info("Locked");
+        print_success("Locked");
         Box::new(Locked {})
     }
-    fn unlock(self: Box<Self>, _first: i8, _second: i8, _third: i8, _combination: [i8; 3]) -> Box<dyn State> {
-        print_error("Already unlocked");
-        self
-    }
-    fn close(self: Box<Self>) -> Box<dyn State> {
-        print_error("Already closed");
-        self
-    }
     fn open(self: Box<Self>) -> Box<dyn State> {
-        print_info("Lock opened");
+        print_success("Lock opened");
         Box::new(UnlockedOpen {})
-    }
-    fn update_combination(self: Box<Self>, _lock: &mut Lock, _first: i8, _second: i8, _third: i8) -> Box<dyn State> {
-        print_error("Must be open to change the code");
-        self
     }
 }
 
 struct Locked {}
 impl State for Locked {
     fn name(&self) -> String {
-        "Locked".to_owned()
+        String::from("Locked")
     }
-    fn status_string(&self) -> String {
-        "[Locked] [Closed]".to_owned()
+    fn draw(&self) -> String {
+        String::from(r#"
+         ________
+        |  ____  |
+        |_|____|_|
+        |   __   |
+        |  [**]  | CLOSED
+        |   []   | LOCKED
+        |   []   |
+         \______/"#)
     }
-    fn lock(self: Box<Self>) -> Box<dyn State> {
-        print_error("Lock already locked");
-        self
+    fn handle_event(self: Box<Self>, event: Event, lock: &mut Lock) -> Box<dyn State> {
+        match event {
+            Event::Unlock(first, second, third) => {
+                self.unlock(first, second, third, lock.combination)
+            },
+            _ => {
+                print_error("Not allowed for a locked lock. Unlock it first.");
+                self
+            },
+        }
     }
+}
+
+impl Locked {
     fn unlock(self: Box<Self>, first: i8, second: i8, third: i8, combination: [i8; 3]) -> Box<dyn State> {
         if [first, second, third] == combination{
-            print_info("Valid combination, unlocked!");
+            print_success("Valid combination, unlocked!");
             Box::new(UnlockedClosed {})
         } else {
             print_error("Invalid combination, still locked");
             self
         }
     }
-    fn close(self: Box<Self>) -> Box<dyn State> {
-        print_error("Lock already closed (and locked)");
-        self
-    }
-    fn open(self: Box<Self>) -> Box<dyn State> {
-        print_error("Unable to open a locked lock");
-        self
-    }
-    fn update_combination(self: Box<Self>, _lock: &mut Lock, _first: i8, _second: i8, _third: i8) -> Box<dyn State> {
-        print_error("Lock must be open and unlocked to change the code");
-        self
-    }
 }
-
 
 impl Debug for dyn State {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -171,15 +173,26 @@ impl Debug for dyn State {
     }
 }
 
+
+enum Event {
+    Lock,
+    Unlock(i8, i8, i8),
+    Open,
+    Close,
+    ChangeCode(i8, i8, i8),
+}
+
 fn main() {
+    println!("Finite State Machine Lock Demo\n");
+
     let mut lock = Lock::new(0, 0, 0);
 
-    println!("Finite State Machine Lock Demo");
-    print_commands();
+
+    lock.print_status();
 
     loop {
         print!("Enter command: ");
-        io::stdout().flush().unwrap(); // Ensures the user's input is on the same line as the prompt
+        io::stdout().flush().unwrap(); // Place the user's input on the same line as the prompt
 
         let mut buffer = String::new();
         io::stdin()
@@ -191,43 +204,27 @@ fn main() {
         if let Some(command) = line.get(0) {
             match command.to_owned() {
                 "new" => {
-                    if let Ok(values) = parse_combo(line) {
-                        print_info("Using provided combination (* * *)");
-                        lock = Lock::new(values[0], values[1], values[2]);
-                    } else {
-                        print_info("Using default combination (0 0 0)");
-                        lock = Lock::new(0,0,0);
-                    }
+                    lock = new_lock_from_line(line);
                     lock.print_status();
                 },
                 "set" => {
-                    let parsed = parse_combo(line);
-                    if let Ok(values) = parsed {
-                        lock.update_combination(values[0], values[1], values[2]);
-                    } else if let Err(msg) = parsed {
-                        print_error(&msg);
-                    }
+                    set_combination_from_line(&mut lock, line);
                     lock.print_status();
                 }
                 "open" => {
-                    lock.open();
+                    lock.handle_event(Event::Open);
                     lock.print_status();
                 },
                 "close" => {
-                    lock.close();
+                    lock.handle_event(Event::Close);
                     lock.print_status();
                 },
                 "lock" => {
-                    lock.lock();
+                    lock.handle_event(Event::Lock);
                     lock.print_status();
                 },
                 "unlock" => {
-                    let parsed = parse_combo(line);
-                    if let Ok(values) = parsed {
-                        lock.unlock(values[0], values[1], values[2]);
-                    } else if let Err(msg) = parsed {
-                        print_error(&msg);
-                    }
+                    unlock_from_line(&mut lock, line);
                     lock.print_status();
                 },
                 "info" | "status" => lock.print_status(),
@@ -241,6 +238,33 @@ fn main() {
     }
 }
 
+fn new_lock_from_line(line: Vec<&str>) -> Lock {
+    if let Ok(values) = parse_combo(line) {
+        print_info("Creating a new lock using provided combination (* * *)...");
+        Lock::new(values[0], values[1], values[2])
+    } else {
+        print_info("Creating a new lock using default combination (0 0 0)...");
+        Lock::new(0,0,0)
+    }
+}
+
+fn set_combination_from_line(lock: &mut Lock, line: Vec<&str>) {
+    let parsed = parse_combo(line);
+    if let Ok(values) = parsed {
+        lock.handle_event(Event::ChangeCode(values[0], values[1], values[2]));
+    } else if let Err(msg) = parsed {
+        print_error(&msg);
+    }
+}
+
+fn unlock_from_line(lock: &mut Lock, line: Vec<&str>) {
+    let parsed = parse_combo(line);
+    if let Ok(values) = parsed {
+        lock.handle_event(Event::Unlock(values[0], values[1], values[2]));
+    } else if let Err(msg) = parsed {
+        print_error(&msg);
+    }
+}
 
 fn parse_combo(line: Vec<&str>) -> Result<[i8; 3], String> { 
     let first = line.get(1);
@@ -254,20 +278,65 @@ fn parse_combo(line: Vec<&str>) -> Result<[i8; 3], String> {
         if let (Ok(first), Ok(second), Ok(third)) = (first, second, third) {
             Ok([first, second, third])
         } else {
-            Err("Error: Values must be numeric".to_owned())
+            Err("All values must be numeric".to_owned())
         }
     } else {
-        Err("Error: Three values required".to_owned())
+        Err("Three numeric values required".to_owned())
     }
 }
 
 fn print_commands() {
-    println!("Possible Commands: [new, set, open, close, lock, unlock, info, debug, quit, help]")
+    print_info(r#"Lock State Machine Demo Help Info
+
+This demo program simulates a mechanical lock via a finite state machine implemented in Rust.
+
+State Diagram:
+   ______________                ________________                 ________
+  |              | -- CLOSE --> |                | --- LOCK ---> |        |
+  | UnlockedOpen |              | UnlockedClosed |               | Locked |
+  |______________| <-- OPEN --- |________________| <-- UNLOCK -- |________|
+
+Possible Commands:
+
+    new [<number> <number> <number>]
+        Creates a new lock. Will use the specified code if provide, otherwise defaults to 0 0 0.
+
+    set <number> <number> <number>
+        Changes the lock's code to the values provided. Lock must already be unlocked and open.
+    
+    open
+        Opens the lock's shackle. Lock must already be unlocked.
+    
+    close
+        Closes the lock's shackle.
+    
+    lock
+        Secures the lock. Lock must already be closed.
+    
+    unlock <number> <number> <number>
+        Unsecures the lock if the provided numbers match the lock's combination. Lock must already be locked.
+    
+    info, status
+        Prints information about the lock's state.
+    
+    debug
+        Prints extended information about the lock and its state.
+    
+    quit, exit
+        Exits the program.
+    
+    help, h, ?
+        Displays this help information."#);
 }
 
 fn print_info(message: &str) {
     println!("[INFO] {}", message);
 }
+
 fn print_error(error: &str) {
     println!("[ERROR] {}", error);
+}
+
+fn print_success(error: &str) {
+    println!("[DONE] {}", error);
 }
