@@ -25,8 +25,7 @@ impl Lock {
         if let Some(s) = self.state.as_ref() {
             println!("{}", &s.draw());
         } else {
-            print_error("Invalid lock state");
-            unreachable!();
+            unreachable!("The lock should never be in an invalid state");
         }
     }
 }
