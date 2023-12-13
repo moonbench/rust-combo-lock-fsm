@@ -113,9 +113,17 @@ This demo program simulates a mechanical lock via a finite state machine impleme
 
 State Diagram:
    ______________                ________________                 ________
-  |              | -- CLOSE --> |                | --- LOCK ---> |        |
-  | UnlockedOpen |              | UnlockedClosed |               | Locked |
-  |______________| <-- OPEN --- |________________| <-- UNLOCK -- |________|
+  |              | -- CLOSE --> |                |               |        |
+  |   Unlocked   |              |    Unlocked    | --- LOCK ---> | Locked |<-------.
+  |     Open     |              |     Closed     |               |        |        |
+  |______________| <-- OPEN --- |________________|               |________|        |
+       |    ^                           ^                           |              |
+       |    |                           |                    UNLOCK |         (NO) |
+       \____/                           |                    _______V__________    |
+                                        |                   /                  \   |
+      SET CODE                          \___________________| Is Correct Code? |___/
+                                                    (YES)   \__________________/
+
 
 Possible Commands:
 
