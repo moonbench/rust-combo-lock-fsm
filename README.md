@@ -131,3 +131,5 @@ Enter command: open
          \______/
 
 ```
+
+A post with more details: https://moonbench.xyz/projects/rust-event-driven-finite-state-machine/
